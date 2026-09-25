@@ -63,6 +63,7 @@ model Order {
   totalPrice Float        
   currency   String      @default("TRY") 
   status     String      @default("BEKLIYOR") 
+  approvedAt DateTime?   // Muhasebede gelirin yazildigi tarih (ONAYLANDI oldugu an)
   createdAt  DateTime    @default(now()) 
   items      OrderItem[]
 }
@@ -73,8 +74,16 @@ model AccountingEntry {
   id          Int      @id @default(autoincrement())
   type        String
   amount      Float
+  currency    String   @default("TRY")
   description String
   createdAt   DateTime @default(now())
+}
+
+// Muhasebe sifirlama bilgisi (tek satir, id = 1). Sifirlama veri silmez;
+// resetAt sonrasindaki hareketler yeni donem olarak hesaplanir.
+model AccountingSetting {
+  id        Int      @id @default(1)
+  resetAt   DateTime
 }
 
 model OrderItem {

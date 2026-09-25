@@ -147,7 +147,11 @@ export class OrdersService {
 
     return this.prisma.order.update({
       where: { orderCode },
-      data: { status }
+      data: {
+        status,
+        // Muhasebe geliri onay tarihine yazilir; onay kaldirilirsa tarih de temizlenir.
+        approvedAt: status === 'ONAYLANDI' ? (order.approvedAt ?? new Date()) : null,
+      }
     });
   }
 
