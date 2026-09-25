@@ -2,9 +2,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Bulut veritabani (Neon PostgreSQL). Adres .env / Render ortam degiskeninden okunur.
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db" 
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Product {
@@ -64,6 +65,16 @@ model Order {
   status     String      @default("BEKLIYOR") 
   createdAt  DateTime    @default(now()) 
   items      OrderItem[]
+}
+
+// Admin tarafindan girilen gelir ve gider hareketleri.
+// Onaylanan siparis gelirleri burada tutulmaz; siparis durumundan canli hesaplanir.
+model AccountingEntry {
+  id          Int      @id @default(autoincrement())
+  type        String
+  amount      Float
+  description String
+  createdAt   DateTime @default(now())
 }
 
 model OrderItem {

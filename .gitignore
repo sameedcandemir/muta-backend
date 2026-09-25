@@ -56,3 +56,8 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
+
+# Yerel SQLite veritabanlari ve yerel yuklemeler (musteri verisi icerir, depoya girmemeli)
+*.db
+*.db-journal
+/uploads

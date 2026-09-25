@@ -1,6 +1,10 @@
-import { Controller, Post, Body, Get, Param, Res, Delete } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Req, Res, Delete } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import type { Response } from 'express'; 
+import type { Request, Response } from 'express'; 
+
+// Fis sayfasina basilan veriler HTML'e kacislanir.
+const escapeHtml = (value: unknown) =>
+  String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string);
 
 @Controller('orders')
 export class OrdersController {
@@ -27,10 +31,11 @@ export class OrdersController {
   }
 
   @Get('view/:orderCode')
-  async viewOrder(@Param('orderCode') orderCode: string, @Res() res: Response) {
+  async viewOrder(@Param('orderCode') orderCode: string, @Req() req: Request, @Res() res: Response) {
     try {
       const order = await this.ordersService.getOrderWithDetails(orderCode);
-      const BACKEND_URL = 'https://muta-api.up.railway.app'; 
+      const BACKEND_URL = `${req.protocol}://${req.get('host')}`;
+      const currencySymbol = order.currency === 'USD' ? '$' : '₺';
 
       let itemsHtml = ''; 
       
@@ -63,22 +68,22 @@ export class OrdersController {
         itemsHtml += `
           <div style="display: flex; align-items: flex-start; border-bottom: 1px solid #eee; padding: 20px 0;">
             
-            <div class="product-image-box" onclick="openModal('${imgUrl}')" style="flex-shrink: 0; width: 140px; height: 190px; margin-right: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.15); background-color: #f9f9f9; border: 1px solid #eee; cursor: pointer; position: relative;">
-               <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;" alt="Ürün Fotoğrafı" onerror="this.src='https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=500'" class="hover-zoom" />
+            <div class="product-image-box" onclick="openModal('${escapeHtml(imgUrl)}')" style="flex-shrink: 0; width: 140px; height: 190px; margin-right: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.15); background-color: #f9f9f9; border: 1px solid #eee; cursor: pointer; position: relative;">
+               <img src="${escapeHtml(imgUrl)}" style="width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;" alt="Ürün Fotoğrafı" onerror="this.src='https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=500'" class="hover-zoom" />
                <div style="position: absolute; bottom: 5px; right: 5px; background: rgba(0,0,0,0.6); color: white; font-size: 10px; padding: 4px 6px; border-radius: 4px; font-weight: bold;">🔍 BÜYÜT</div>
             </div>
 
             <div style="flex: 1; padding-top: 5px;">
-              <h3 style="margin: 0 0 8px 0; font-size: 18px; text-transform: uppercase; color: #111; line-height: 1.2;">${item.product.name_tr}</h3>
-              <p style="margin: 0 0 5px 0; color: #64748b; font-size: 14px;">🔖 Kod: <b style="color: #000;">${item.product.productCode}</b></p>
-              <p style="margin: 0 0 5px 0; color: #64748b; font-size: 14px;">🎨 Renk: <span style="color: #000; font-weight: 500;">${item.color}</span></p>
-              <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px;">📏 Seri: <span style="color: #000; font-weight: 500;">${item.size}</span></p>
+              <h3 style="margin: 0 0 8px 0; font-size: 18px; text-transform: uppercase; color: #111; line-height: 1.2;">${escapeHtml(item.product?.name_tr || 'Silinmiş Ürün')}</h3>
+              <p style="margin: 0 0 5px 0; color: #64748b; font-size: 14px;">🔖 Kod: <b style="color: #000;">${escapeHtml(item.product?.productCode || '-')}</b></p>
+              <p style="margin: 0 0 5px 0; color: #64748b; font-size: 14px;">🎨 Renk: <span style="color: #000; font-weight: 500;">${escapeHtml(item.color)}</span></p>
+              <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px;">📏 Seri: <span style="color: #000; font-weight: 500;">${escapeHtml(item.size)}</span></p>
               <div style="display: inline-block; background: #fff1f2; color: #e11d48; padding: 4px 10px; border-radius: 6px; font-size: 14px; font-weight: bold;">
                 📦 ${item.quantity} Adet
               </div>
             </div>
             <div style="text-align: right; padding-top: 5px;">
-              <h4 style="margin: 0; font-size: 18px; color: #111; font-weight: 700;">₺${item.unitPrice.toLocaleString('tr-TR')}</h4>
+              <h4 style="margin: 0; font-size: 18px; color: #111; font-weight: 700;">${currencySymbol}${item.unitPrice.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</h4>
               <p style="margin: 3px 0 0 0; color: #94a3b8; font-size: 11px; font-weight: bold;">BİRİM FİYAT</p>
             </div>
           </div>
@@ -91,7 +96,7 @@ export class OrdersController {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>MUTA Sipariş - ${order.orderCode}</title>
+          <title>MUTA Sipariş - ${escapeHtml(order.orderCode)}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; padding: 20px; margin: 0; }
             .container { max-width: 650px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
@@ -126,10 +131,10 @@ export class OrdersController {
             </div>
             
             <div class="order-info">
-              <p><strong>Sipariş Kodu:</strong> ${order.orderCode}</p>
+              <p><strong>Sipariş Kodu:</strong> ${escapeHtml(order.orderCode)}</p>
               <p><strong>Tarih:</strong> ${new Date(order.createdAt).toLocaleString('tr-TR')}</p>
-              <p><strong>Müşteri No:</strong> ${order.user.phone}</p>
-              <p><strong>Durum:</strong> <span style="color: #d97706; font-weight: bold;">${order.status}</span></p>
+              <p><strong>Müşteri No:</strong> ${escapeHtml(order.user?.phone)}</p>
+              <p><strong>Durum:</strong> <span style="color: #d97706; font-weight: bold;">${escapeHtml(order.status)}</span></p>
             </div>
 
             <h3 style="border-bottom: 1px solid #eee; padding-bottom: 12px; color: #111; font-size: 13px; text-transform: uppercase; letter-spacing: 2px;">Sipariş Edilen Ürünler</h3>
@@ -138,7 +143,7 @@ export class OrdersController {
             
             <div class="total-box">
               <p>GENEL TOPLAM</p>
-              <h2>₺${order.totalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</h2>
+              <h2>${currencySymbol}${order.totalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</h2>
             </div>
             
             <p style="text-align: center; color: #94a3b8; font-size: 11px; margin-top: 30px; letter-spacing: 1px;">Bu bir dijital sipariş fişidir. MUTA Collection.</p>

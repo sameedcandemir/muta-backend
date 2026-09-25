@@ -1,0 +1,22 @@
+# Render Blueprint: MUTA backend'i ucretsiz web servisi olarak kurar.
+# Render panelinde "New > Blueprint" ile bu depo secilince otomatik okunur.
+services:
+  - type: web
+    name: muta-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

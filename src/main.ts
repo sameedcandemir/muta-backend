@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from '@nestjs/common';
@@ -9,6 +10,9 @@ async function bootstrap() {
   
   // MUTA Mobil uygulaması ile iletişim için CORS şart.
   app.enableCors(); 
+
+  // Railway gibi proxy arkasinda fis linklerinin dogru protokolle (https) uretilmesi icin.
+  app.set('trust proxy', 1);
 
   // 📸 MUTA VİTRİNİ: Klasik yüklemeler için 'uploads' klasörünü açık tutuyoruz
   app.useStaticAssets(path.join(process.cwd(), 'uploads'), {
@@ -24,7 +28,7 @@ async function bootstrap() {
   console.log('\n-------------------------------------------');
   console.log('🚀 MUTA BACKEND SİSTEMİ ATEŞLENDİ');
   console.log(`📡 Servis Portu: ${port}`);
-  console.log(`📂 Veritabanı Modu: Bulut (Neon/PostgreSQL)`);
+  console.log(`📂 Veritabanı Modu: PostgreSQL (Neon)`);
   console.log('📸 Dosya Sunucusu: Cloudinary & Yerel Aktif');
   console.log('🛠️ Geliştirici: Candemir Yazılım');
   console.log('-------------------------------------------\n');

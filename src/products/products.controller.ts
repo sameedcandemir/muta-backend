@@ -10,6 +10,60 @@ export class ProductsController {
     private readonly cloudinary: CloudinaryService 
   ) {}
 
+  // Renk varyasyonlarini ve 5'er fotografini isler. Yeni dosyalar Cloudinary'e yuklenir,
+  // dosya gelmeyen slotlarda (duzenleme modu) mevcut fotograf URL'si korunur.
+  private async buildColorsData(colorsJson: string, files: Array<Express.Multer.File> = []) {
+    let parsedColors: any[] = [];
+    try {
+      parsedColors = JSON.parse(colorsJson || '[]');
+    } catch (e) {
+      throw new BadRequestException('Renk verileri hatalı formatta (Geçersiz JSON).');
+    }
+
+    if (!Array.isArray(parsedColors) || parsedColors.length === 0) {
+      throw new BadRequestException('Ürüne en az bir renk varyasyonu eklemelisiniz.');
+    }
+
+    const colorsDataToSave: any[] = [];
+
+    for (let i = 0; i < parsedColors.length; i++) {
+      const colorInfo = parsedColors[i] || {};
+      const imageUrls: (string | null)[] = [null, null, null, null, null];
+
+      for (let j = 1; j <= 5; j++) {
+        const file = files.find(f => f.fieldname === `image_${i}_${j}`);
+        const existingUrl = colorInfo[`image${j}`];
+        if (file) {
+          try {
+            const upload = await this.cloudinary.uploadImage(file);
+            imageUrls[j - 1] = upload.secure_url;
+          } catch (error: any) {
+            console.error('❌ MUTA CLOUDINARY HATASI:', error?.message || error);
+            throw new BadRequestException('Fotoğraf yüklenemedi. Lütfen tekrar deneyin.');
+          }
+        } else if (typeof existingUrl === 'string' && existingUrl.trim() !== '') {
+          imageUrls[j - 1] = existingUrl;
+        }
+      }
+
+      if (!colorInfo.colorName || String(colorInfo.colorName).trim() === '') {
+        throw new BadRequestException(`${i + 1}. rengin adı boş olamaz.`);
+      }
+
+      colorsDataToSave.push({
+        colorName: String(colorInfo.colorName).trim(),
+        colorHex: colorInfo.colorHex || null,
+        image1: imageUrls[0],
+        image2: imageUrls[1],
+        image3: imageUrls[2],
+        image4: imageUrls[3],
+        image5: imageUrls[4]
+      });
+    }
+
+    return colorsDataToSave;
+  }
+
   @Get()
   async getAllProducts() {
     return await this.productsService.findAll();
@@ -23,44 +77,11 @@ export class ProductsController {
   ) {
     console.log(`📱 MUTA SİSTEMİ: Varyasyonlu yeni ürün işleniyor -> ${body.productCode}`);
 
-    let parsedColors: any[] = [];
-    try {
-      parsedColors = JSON.parse(body.colors || '[]');
-    } catch (e) {
-      throw new BadRequestException('Renk verileri hatalı formatta (Geçersiz JSON).');
+    if (!body.productCode || !body.name_tr || !Number.isFinite(parseFloat(body.priceUSD))) {
+      throw new BadRequestException('Ürün kodu, ürün adı ve geçerli bir USD fiyatı zorunludur.');
     }
 
-    if (parsedColors.length === 0) {
-      throw new BadRequestException('Ürüne en az bir renk varyasyonu eklemelisiniz.');
-    }
-
-    const colorsDataToSave: any[] = [];
-
-    for (let i = 0; i < parsedColors.length; i++) {
-      const colorInfo = parsedColors[i];
-      
-      // 🚀 YENİ: 5 Fotoğrafı tutacak bir dizi oluşturuyoruz
-      const imageUrls: (string | null)[] = [null, null, null, null, null];
-
-      // 1'den 5'e kadar olan tüm fotoğrafları kontrol et ve Cloudinary'e yükle
-      for (let j = 1; j <= 5; j++) {
-        const file = files.find(f => f.fieldname === `image_${i}_${j}`);
-        if (file) {
-          const upload = await this.cloudinary.uploadImage(file);
-          imageUrls[j - 1] = upload.secure_url;
-        }
-      }
-
-      colorsDataToSave.push({
-        colorName: colorInfo.colorName,
-        colorHex: colorInfo.colorHex || null,
-        image1: imageUrls[0],
-        image2: imageUrls[1],
-        image3: imageUrls[2],
-        image4: imageUrls[3],
-        image5: imageUrls[4]
-      });
-    }
+    const colorsDataToSave = await this.buildColorsData(body.colors, files);
 
     const productData = {
       ...body,
@@ -104,8 +125,9 @@ export class ProductsController {
     
     const updateData = {
       ...body,
-      priceUSD: body.priceUSD ? parseFloat(body.priceUSD) : undefined,
-      priceTRY: body.priceTRY ? parseFloat(body.priceTRY) : undefined,
+      colorsData: body.colors !== undefined ? await this.buildColorsData(body.colors, files) : undefined,
+      priceUSD: body.priceUSD !== undefined && body.priceUSD !== '' ? parseFloat(body.priceUSD) : undefined,
+      priceTRY: body.priceTRY !== undefined && body.priceTRY !== '' ? parseFloat(body.priceTRY) : undefined,
       discountPercentage: body.discountPercentage !== undefined ? parseInt(body.discountPercentage, 10) : undefined,
     };
 

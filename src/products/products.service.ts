@@ -1,5 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Prisma hata kodlarini kullaniciya anlamli HTTP hatalarina cevirir.
+const toHttpError = (error: any, fallback: string) => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') return new ConflictException('Bu ürün kodu zaten kullanılıyor. Lütfen farklı bir kod girin.');
+    if (error.code === 'P2025') return new NotFoundException('Ürün bulunamadı.');
+  }
+  if (error?.getStatus) return error;
+  return new BadRequestException(fallback);
+};
 
 @Injectable()
 export class ProductsService {
@@ -57,7 +68,7 @@ export class ProductsService {
 
     } catch (error: any) {
       console.error('❌ MUTA VERİTABANI HATASI (Kayıt):', error.message);
-      throw error;
+      throw toHttpError(error, 'Ürün kaydedilemedi.');
     }
   }
 
@@ -66,25 +77,38 @@ export class ProductsService {
     try {
       console.log(`📦 MUTA SİSTEMİ: Ürün güncelleme başlatıldı -> ID: ${id}`);
 
-      const updatedProduct = await this.prisma.product.update({
-        where: { id: id },
-        data: {
+      const productFields = {
           productCode: data.productCode,
           name_tr: data.name_tr,
           name_en: data.name_en,
           name_ar: data.name_ar,
-          priceUSD: data.priceUSD ? Number(data.priceUSD) : undefined, 
-          priceTRY: data.priceTRY ? Number(data.priceTRY) : undefined,
+          priceUSD: Number.isFinite(data.priceUSD) ? Number(data.priceUSD) : undefined, 
+          priceTRY: Number.isFinite(data.priceTRY) ? Number(data.priceTRY) : undefined,
           
           // 🚀 YENİ: İndirim Yüzdesi güncelleniyor
-          discountPercentage: data.discountPercentage !== undefined ? Number(data.discountPercentage) : undefined,
+          discountPercentage: Number.isFinite(Number(data.discountPercentage)) && data.discountPercentage !== undefined
+            ? Math.min(99, Math.max(0, Math.round(Number(data.discountPercentage))))
+            : undefined,
 
           sizes: data.sizes,
           category: data.category,
           productType: data.productType,
           brand: data.brand,
-        },
-        include: { colors: true }
+      };
+
+      // Renkler gonderildiyse eski varyasyonlar silinip yenileri tek islemde yazilir.
+      const updatedProduct = await this.prisma.$transaction(async (tx) => {
+        if (Array.isArray(data.colorsData)) {
+          await tx.productColor.deleteMany({ where: { productId: id } });
+        }
+        return tx.product.update({
+          where: { id: id },
+          data: {
+            ...productFields,
+            ...(Array.isArray(data.colorsData) ? { colors: { create: data.colorsData } } : {}),
+          },
+          include: { colors: true }
+        });
       });
 
       console.log(`✅ MUTA SİSTEMİ: Ürün başarıyla güncellendi (ID: ${id})`);
@@ -92,7 +116,7 @@ export class ProductsService {
 
     } catch (error: any) {
       console.error('❌ MUTA VERİTABANI HATASI (Güncelleme):', error.message);
-      throw error;
+      throw toHttpError(error, 'Ürün güncellenemedi.');
     }
   }
 
@@ -110,7 +134,7 @@ export class ProductsService {
       return deletedProduct;
     } catch (error: any) {
       console.error('❌ MUTA VERİTABANI HATASI (Silme): ', error.message);
-      throw new Error('Ürün silinemedi.');
+      throw toHttpError(error, 'Ürün silinemedi.');
     }
   }
 
@@ -125,7 +149,7 @@ export class ProductsService {
       return updatedProduct;
     } catch (error: any) {
       console.error('❌ MUTA VERİTABANI HATASI (Stok Güncelleme):', error.message);
-      throw new Error('Stok güncellenemedi.');
+      throw toHttpError(error, 'Stok güncellenemedi.');
     }
   }
 }

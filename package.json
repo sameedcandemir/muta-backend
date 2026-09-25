@@ -11,7 +11,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "npx prisma db push && node dist/main",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:sqlite-to-postgres": "ts-node scripts/migrate-sqlite-to-postgres.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
@@ -71,5 +72,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
