@@ -36,6 +36,21 @@ export class OrdersController {
       const order = await this.ordersService.getOrderWithDetails(orderCode);
       const BACKEND_URL = `${req.protocol}://${req.get('host')}`;
       const currencySymbol = order.currency === 'USD' ? '$' : '₺';
+      const addressHtml = order.addressLine
+        ? `
+            <div class="address-box">
+              <p class="address-title">📍 TESLİMAT ADRESİ</p>
+              <p class="address-name">${escapeHtml(order.recipientName)}</p>
+              <p>📞 ${escapeHtml(order.recipientPhone)}</p>
+              <p>${escapeHtml(order.addressLine)}</p>
+              <p><strong>${escapeHtml(order.district)} / ${escapeHtml(order.city)}</strong></p>
+              ${order.orderNote ? `<p class="address-note">📝 Not: ${escapeHtml(order.orderNote)}</p>` : ''}
+            </div>`
+        : `
+            <div class="address-box address-missing">
+              <p class="address-title">📍 TESLİMAT ADRESİ</p>
+              <p>Bu siparişte adres bilgisi bulunmuyor.</p>
+            </div>`;
 
       let itemsHtml = ''; 
       
@@ -116,6 +131,13 @@ export class OrdersController {
             .modal.show .modal-content { transform: scale(1); }
             .close { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; font-weight: 100; cursor: pointer; user-select: none; }
             .close:hover { color: #bbb; }
+            .address-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 18px 20px; margin-bottom: 30px; }
+            .address-box p { margin: 0 0 6px 0; font-size: 14px; color: #334155; line-height: 1.45; white-space: pre-line; }
+            .address-box .address-title { font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #92400e; margin-bottom: 10px; }
+            .address-box .address-name { font-size: 16px; font-weight: bold; color: #111; }
+            .address-box .address-note { margin-top: 10px; color: #92400e; }
+            .address-missing { background: #f8fafc; border-color: #e2e8f0; }
+            .address-missing .address-title { color: #64748b; }
 
             @media (max-width: 500px) {
               .order-info { grid-template-columns: 1fr; }
@@ -136,6 +158,8 @@ export class OrdersController {
               <p><strong>Müşteri No:</strong> ${escapeHtml(order.user?.phone)}</p>
               <p><strong>Durum:</strong> <span style="color: #d97706; font-weight: bold;">${escapeHtml(order.status)}</span></p>
             </div>
+
+            ${addressHtml}
 
             <h3 style="border-bottom: 1px solid #eee; padding-bottom: 12px; color: #111; font-size: 13px; text-transform: uppercase; letter-spacing: 2px;">Sipariş Edilen Ürünler</h3>
             

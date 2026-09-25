@@ -64,6 +64,14 @@ model Order {
   currency   String      @default("TRY") 
   status     String      @default("BEKLIYOR") 
   approvedAt DateTime?   // Muhasebede gelirin yazildigi tarih (ONAYLANDI oldugu an)
+
+  // Teslimat adresi (eski siparislerde bos olabilir)
+  recipientName  String?
+  recipientPhone String?
+  city           String?
+  district       String?
+  addressLine    String?
+  orderNote      String?
   createdAt  DateTime    @default(now()) 
   items      OrderItem[]
 }

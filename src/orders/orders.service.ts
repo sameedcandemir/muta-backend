@@ -3,6 +3,32 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const ORDER_STATUSES = ['BEKLIYOR', 'ONAYLANDI', 'IPTAL'];
 
+const clean = (value: unknown, maxLength: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+
+// Siparis ancak eksiksiz teslimat adresiyle tamamlanir.
+const parseDeliveryAddress = (data: any) => {
+  const address = data?.address || {};
+  const recipientName = clean(address.recipientName, 80);
+  const recipientPhone = clean(address.recipientPhone, 20);
+  const city = clean(address.city, 40);
+  const district = clean(address.district, 60);
+  const addressLine = String(address.addressLine ?? '').trim().slice(0, 400);
+  const orderNote = String(address.orderNote ?? '').trim().slice(0, 300);
+
+  if (!recipientName && !city && !addressLine) {
+    throw new BadRequestException(
+      'Sipariş için teslimat adresi gerekli. Uygulamanız eski sürümdeyse lütfen kapatıp yeniden açarak güncelleyin.',
+    );
+  }
+  if (recipientName.length < 3) throw new BadRequestException('Lütfen alıcının adını ve soyadını yazın.');
+  if (recipientPhone.replace(/\D/g, '').length < 10) throw new BadRequestException('Lütfen geçerli bir iletişim telefonu yazın.');
+  if (!city) throw new BadRequestException('Lütfen il bilgisini yazın.');
+  if (!district) throw new BadRequestException('Lütfen ilçe bilgisini yazın.');
+  if (addressLine.length < 10) throw new BadRequestException('Lütfen açık adresi (mahalle, sokak, bina/daire no) eksiksiz yazın.');
+
+  return { recipientName, recipientPhone, city, district, addressLine, orderNote: orderNote || null };
+};
+
 @Injectable()
 export class OrdersService {
   constructor(private prisma: PrismaService) {}
@@ -28,6 +54,8 @@ export class OrdersService {
     if (!Number.isInteger(userId) || userId <= 0 || productIds.length === 0 || productIds.some((id) => !Number.isInteger(id) || id <= 0)) {
       throw new BadRequestException('Sipariş için geçerli ürünler bulunamadı.');
     }
+
+    const deliveryAddress = parseDeliveryAddress(data);
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -71,6 +99,7 @@ export class OrdersService {
         userId,
         totalPrice,
         currency: data.currency === 'USD' ? 'USD' : 'TRY',
+        ...deliveryAddress,
         items: {
           create: itemsToCreate,
         },
