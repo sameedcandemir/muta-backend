@@ -36,6 +36,9 @@ export class OrdersController {
       const order = await this.ordersService.getOrderWithDetails(orderCode);
       const BACKEND_URL = `${req.protocol}://${req.get('host')}`;
       const currencySymbol = order.currency === 'USD' ? '$' : '₺';
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        [order.addressLine, order.district, order.city].filter(Boolean).join(', '),
+      )}`;
       const addressHtml = order.addressLine
         ? `
             <div class="address-box">
@@ -45,6 +48,7 @@ export class OrdersController {
               <p>${escapeHtml(order.addressLine)}</p>
               <p><strong>${escapeHtml(order.district)} / ${escapeHtml(order.city)}</strong></p>
               ${order.orderNote ? `<p class="address-note">📝 Not: ${escapeHtml(order.orderNote)}</p>` : ''}
+              <a class="map-btn" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener">📍 Haritada Aç</a>
             </div>`
         : `
             <div class="address-box address-missing">
@@ -136,6 +140,8 @@ export class OrdersController {
             .address-box .address-title { font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #92400e; margin-bottom: 10px; }
             .address-box .address-name { font-size: 16px; font-weight: bold; color: #111; }
             .address-box .address-note { margin-top: 10px; color: #92400e; }
+            .map-btn { display: inline-block; margin-top: 12px; background: #111; color: #fff; text-decoration: none; font-size: 13px; font-weight: bold; letter-spacing: 1px; padding: 10px 18px; border-radius: 8px; }
+            .map-btn:active { opacity: 0.8; }
             .address-missing { background: #f8fafc; border-color: #e2e8f0; }
             .address-missing .address-title { color: #64748b; }
 
