@@ -1,5 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+type Tx = Prisma.TransactionClient;
+const PIECES_PER_SERIES = 5;
+
+// Siparis kalemlerini urun bazinda toplam adede cevirir.
+const sumQuantitiesByProduct = (items: { productId: number; quantity: number }[]) => {
+  const totals = new Map<number, number>();
+  for (const item of items) totals.set(item.productId, (totals.get(item.productId) ?? 0) + item.quantity);
+  return totals;
+};
 
 const ORDER_STATUSES = ['BEKLIYOR', 'ONAYLANDI', 'IPTAL'];
 
@@ -32,6 +43,38 @@ const parseDeliveryAddress = (data: any) => {
 @Injectable()
 export class OrdersService {
   constructor(private prisma: PrismaService) {}
+
+  // Stok takibi yapilan urunlerden adet duser. Yetersizse hic bir sey dusmeden hata verir
+  // (transaction icinde cagrilir; kosullu guncelleme ayni anda gelen siparislerde eksi stogu engeller).
+  private async reserveStock(tx: Tx, items: { productId: number; quantity: number }[]) {
+    for (const [productId, quantity] of sumQuantitiesByProduct(items)) {
+      const product = await tx.product.findUnique({ where: { id: productId }, select: { name_tr: true, stockQuantity: true } });
+      if (!product || product.stockQuantity === null) continue;
+
+      const result = await tx.product.updateMany({
+        where: { id: productId, stockQuantity: { gte: quantity } },
+        data: { stockQuantity: { decrement: quantity } },
+      });
+      if (result.count === 0) {
+        const left = product.stockQuantity;
+        throw new BadRequestException(
+          left < PIECES_PER_SERIES
+            ? `"${product.name_tr}" ürününün stoğu tükendi. Lütfen sepetinizden çıkarın.`
+            : `"${product.name_tr}" için stokta ${left} adet (${Math.floor(left / PIECES_PER_SERIES)} seri) kaldı. Lütfen daha az seri seçin.`,
+        );
+      }
+    }
+  }
+
+  // Iptal edilen / silinen siparisin adetleri stoga geri eklenir.
+  private async releaseStock(tx: Tx, items: { productId: number; quantity: number }[]) {
+    for (const [productId, quantity] of sumQuantitiesByProduct(items)) {
+      await tx.product.updateMany({
+        where: { id: productId, stockQuantity: { not: null } },
+        data: { stockQuantity: { increment: quantity } },
+      });
+    }
+  }
 
   // Siparis kodu unique oldugu icin cakisma olursa yeni kod uretilir.
   private async generateOrderCode() {
@@ -93,17 +136,23 @@ export class OrdersService {
     const totalPrice =
       Math.round(itemsToCreate.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) * 100) / 100;
 
-    const order = await this.prisma.order.create({
-      data: {
-        orderCode: await this.generateOrderCode(),
-        userId,
-        totalPrice,
-        currency: data.currency === 'USD' ? 'USD' : 'TRY',
-        ...deliveryAddress,
-        items: {
-          create: itemsToCreate,
+    const orderCode = await this.generateOrderCode();
+
+    // Stok dusme ve siparis kaydi tek islemde: biri basarisiz olursa ikisi de geri alinir.
+    const order = await this.prisma.$transaction(async (tx) => {
+      await this.reserveStock(tx, itemsToCreate);
+      return tx.order.create({
+        data: {
+          orderCode,
+          userId,
+          totalPrice,
+          currency: data.currency === 'USD' ? 'USD' : 'TRY',
+          ...deliveryAddress,
+          items: {
+            create: itemsToCreate,
+          },
         },
-      },
+      });
     });
 
     return { orderCode: order.orderCode };
@@ -171,27 +220,34 @@ export class OrdersService {
       throw new BadRequestException('Geçersiz sipariş durumu.');
     }
 
-    const order = await this.prisma.order.findUnique({ where: { orderCode } });
+    const order = await this.prisma.order.findUnique({ where: { orderCode }, include: { items: true } });
     if (!order) throw new NotFoundException('Sipariş bulunamadı!');
 
-    return this.prisma.order.update({
-      where: { orderCode },
-      data: {
-        status,
-        // Muhasebe geliri onay tarihine yazilir; onay kaldirilirsa tarih de temizlenir.
-        approvedAt: status === 'ONAYLANDI' ? (order.approvedAt ?? new Date()) : null,
-      }
+    return this.prisma.$transaction(async (tx) => {
+      // Iptal edilen siparisin adetleri stoga doner; iptalden geri alinirsa tekrar duser.
+      if (order.status !== 'IPTAL' && status === 'IPTAL') await this.releaseStock(tx, order.items);
+      if (order.status === 'IPTAL' && status !== 'IPTAL') await this.reserveStock(tx, order.items);
+
+      return tx.order.update({
+        where: { orderCode },
+        data: {
+          status,
+          // Muhasebe geliri onay tarihine yazilir; onay kaldirilirsa tarih de temizlenir.
+          approvedAt: status === 'ONAYLANDI' ? (order.approvedAt ?? new Date()) : null,
+        }
+      });
     });
   }
 
   async deleteOrder(orderId: number) {
     try {
-      await this.prisma.orderItem.deleteMany({
-        where: { orderId: orderId },
-      });
-
-      const deletedOrder = await this.prisma.order.delete({
-        where: { id: orderId },
+      const deletedOrder = await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
+        if (!order) throw new NotFoundException('Sipariş bulunamadı!');
+        // Iptal edilmemis siparis silinirse adetleri stoga geri eklenir.
+        if (order.status !== 'IPTAL') await this.releaseStock(tx, order.items);
+        await tx.orderItem.deleteMany({ where: { orderId } });
+        return tx.order.delete({ where: { id: orderId } });
       });
 
       return { message: 'Sipariş ve detayları başarıyla silindi', deletedOrder };

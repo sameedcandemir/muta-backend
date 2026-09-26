@@ -2,6 +2,17 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+// Stok adedi: bos birakilirsa stok takibi yapilmaz (null); undefined = degistirme.
+const parseStockQuantity = (value: unknown): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || String(value).trim() === '' || String(value) === 'null') return null;
+  const quantity = Number(String(value).replace(/[.\s]/g, ''));
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    throw new BadRequestException('Stok adedi 0 veya daha büyük bir tam sayı olmalıdır.');
+  }
+  return quantity;
+};
+
 // Prisma hata kodlarini kullaniciya anlamli HTTP hatalarina cevirir.
 const toHttpError = (error: any, fallback: string) => {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -47,6 +58,7 @@ export class ProductsService {
           priceUSD: Number(data.priceUSD), 
           priceTRY: Number(data.priceTRY || 0), 
           stockStatus: data.stockStatus !== undefined ? Number(data.stockStatus) : 1,
+          stockQuantity: parseStockQuantity(data.stockQuantity) ?? null,
           
           // 🚀 YENİ: Mobilden gelen indirim veritabanına işleniyor
           discountPercentage: data.discountPercentage ? Number(data.discountPercentage) : 0,
@@ -90,6 +102,7 @@ export class ProductsService {
             ? Math.min(99, Math.max(0, Math.round(Number(data.discountPercentage))))
             : undefined,
 
+          stockQuantity: parseStockQuantity(data.stockQuantity),
           sizes: data.sizes,
           category: data.category,
           productType: data.productType,
