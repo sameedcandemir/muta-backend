@@ -3,7 +3,12 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Tx = Prisma.TransactionClient;
-const PIECES_PER_SERIES = 5;
+
+// "Seri 3" -> 3
+const parseSeriesCount = (size: string) => {
+  const match = /seri\s*(\d+)/i.exec(size || '');
+  return match ? Number(match[1]) : null;
+};
 
 // Siparis kalemlerini urun bazinda toplam adede cevirir.
 const sumQuantitiesByProduct = (items: { productId: number; quantity: number }[]) => {
@@ -48,7 +53,7 @@ export class OrdersService {
   // (transaction icinde cagrilir; kosullu guncelleme ayni anda gelen siparislerde eksi stogu engeller).
   private async reserveStock(tx: Tx, items: { productId: number; quantity: number }[]) {
     for (const [productId, quantity] of sumQuantitiesByProduct(items)) {
-      const product = await tx.product.findUnique({ where: { id: productId }, select: { name_tr: true, stockQuantity: true } });
+      const product = await tx.product.findUnique({ where: { id: productId }, select: { name_tr: true, stockQuantity: true, piecesPerSeries: true } });
       if (!product || product.stockQuantity === null) continue;
 
       const result = await tx.product.updateMany({
@@ -57,10 +62,11 @@ export class OrdersService {
       });
       if (result.count === 0) {
         const left = product.stockQuantity;
+        const perSeries = product.piecesPerSeries || 5;
         throw new BadRequestException(
-          left < PIECES_PER_SERIES
+          left < perSeries
             ? `"${product.name_tr}" ürününün stoğu tükendi. Lütfen sepetinizden çıkarın.`
-            : `"${product.name_tr}" için stokta ${left} adet (${Math.floor(left / PIECES_PER_SERIES)} seri) kaldı. Lütfen daha az seri seçin.`,
+            : `"${product.name_tr}" için stokta ${left} adet (${Math.floor(left / perSeries)} seri) kaldı. Lütfen daha az seri seçin.`,
         );
       }
     }
@@ -102,8 +108,9 @@ export class OrdersService {
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, stockStatus: true },
+      select: { id: true, stockStatus: true, piecesPerSeries: true },
     });
+    const piecesPerSeriesById = new Map(products.map((product) => [product.id, product.piecesPerSeries || 5]));
 
     const hasUnavailableProduct =
       products.length !== productIds.length ||
@@ -120,13 +127,18 @@ export class OrdersService {
       throw new BadRequestException('Kullanıcı bulunamadı. Lütfen tekrar giriş yapın.');
     }
 
-    const itemsToCreate = orderItems.map((item: any) => ({
-      productId: Number(item.productId),
-      size: String(item.size || ''),
-      color: String(item.color || ''),
-      quantity: Number(item.quantity),
-      unitPrice: Number(item.unitPrice),
-    }));
+    // Adet sunucuda hesaplanir: seri sayisi x urunun serideki adedi (unitPrice parca basi fiyattir).
+    const itemsToCreate = orderItems.map((item: any) => {
+      const productId = Number(item.productId);
+      const seriesCount = parseSeriesCount(String(item.size || ''));
+      return {
+        productId,
+        size: String(item.size || ''),
+        color: String(item.color || ''),
+        quantity: seriesCount ? seriesCount * (piecesPerSeriesById.get(productId) ?? 5) : Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+      };
+    });
 
     if (itemsToCreate.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
       throw new BadRequestException('Sipariş kalemlerinde geçersiz adet veya fiyat var.');

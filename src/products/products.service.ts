@@ -13,6 +13,16 @@ const parseStockQuantity = (value: unknown): number | null | undefined => {
   return quantity;
 };
 
+// Serideki adet: 1-1000 arasi tam sayi; undefined = degistirme.
+const parsePiecesPerSeries = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || String(value).trim() === '') return undefined;
+  const pieces = Number(value);
+  if (!Number.isInteger(pieces) || pieces < 1 || pieces > 1000) {
+    throw new BadRequestException('Bir serideki adet 1 ile 1000 arasında bir tam sayı olmalıdır.');
+  }
+  return pieces;
+};
+
 // Prisma hata kodlarini kullaniciya anlamli HTTP hatalarina cevirir.
 const toHttpError = (error: any, fallback: string) => {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -59,6 +69,7 @@ export class ProductsService {
           priceTRY: Number(data.priceTRY || 0), 
           stockStatus: data.stockStatus !== undefined ? Number(data.stockStatus) : 1,
           stockQuantity: parseStockQuantity(data.stockQuantity) ?? null,
+          piecesPerSeries: parsePiecesPerSeries(data.piecesPerSeries) ?? 5,
           
           // 🚀 YENİ: Mobilden gelen indirim veritabanına işleniyor
           discountPercentage: data.discountPercentage ? Number(data.discountPercentage) : 0,
@@ -103,6 +114,7 @@ export class ProductsService {
             : undefined,
 
           stockQuantity: parseStockQuantity(data.stockQuantity),
+          piecesPerSeries: parsePiecesPerSeries(data.piecesPerSeries),
           sizes: data.sizes,
           category: data.category,
           productType: data.productType,

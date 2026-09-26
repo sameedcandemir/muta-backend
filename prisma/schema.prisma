@@ -17,8 +17,10 @@ model Product {
   priceUSD           Float
   priceTRY           Float          @default(0) 
   stockStatus        Int            @default(1)
-  // Toplam stok (adet). Bos (null) = stok takibi yok. Her seri 5 adettir; siparisle duser.
+  // Toplam stok (adet). Bos (null) = stok takibi yok; siparisle duser.
   stockQuantity      Int?
+  // Bir serideki adet (admin belirler). Musteri N seri secerse N x piecesPerSeries adet.
+  piecesPerSeries    Int            @default(5)
   
   // 🚀 YENİ: İndirim Yüzdesi (Varsayılan olarak 0 yani indirim yok)
   discountPercentage Int            @default(0)
