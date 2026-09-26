@@ -36,6 +36,13 @@ export class OrdersController {
       const order = await this.ordersService.getOrderWithDetails(orderCode);
       const BACKEND_URL = `${req.protocol}://${req.get('host')}`;
       const currencySymbol = order.currency === 'USD' ? '$' : '₺';
+      // Toplam adet ve seri sayisi fiste gosterilir
+      const totalQuantity = order.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      const totalSeries = order.items.reduce((sum: number, item: any) => {
+        const match = /seri\s*(\d+)/i.exec(item.size || '');
+        return sum + (match ? Number(match[1]) : 0);
+      }, 0);
+      const quantityText = `${totalQuantity.toLocaleString('tr-TR')} adet${totalSeries > 0 ? ` (${totalSeries} seri)` : ''}`;
       const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         [order.addressLine, order.district, order.city].filter(Boolean).join(', '),
       )}`;
@@ -125,6 +132,9 @@ export class OrdersController {
             .order-info p { margin: 0; font-size: 14px; color: #334155; }
             .total-box { background: #111; color: #fff; text-align: right; padding: 25px; border-radius: 12px; margin-top: 30px; }
             .total-box h2 { margin: 0; font-size: 28px; font-weight: 700; color: #fff; }
+            .total-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 14px; margin-bottom: 14px; text-align: left; }
+            .total-row span { font-size: 11px; opacity: 0.7; letter-spacing: 2px; }
+            .total-row strong { font-size: 18px; }
             .total-box p { margin: 0 0 5px 0; font-size: 11px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; }
             
             /* 🚀 YENİ: Fotoğraf Büyütme (Modal) CSS Ayarları */
@@ -162,6 +172,7 @@ export class OrdersController {
               <p><strong>Sipariş Kodu:</strong> ${escapeHtml(order.orderCode)}</p>
               <p><strong>Tarih:</strong> ${new Date(order.createdAt).toLocaleString('tr-TR')}</p>
               <p><strong>Müşteri No:</strong> ${escapeHtml(order.user?.phone)}</p>
+              <p><strong>Toplam Adet:</strong> ${quantityText}</p>
               <p><strong>Durum:</strong> <span style="color: #d97706; font-weight: bold;">${escapeHtml(order.status)}</span></p>
             </div>
 
@@ -172,6 +183,10 @@ export class OrdersController {
             ${itemsHtml}
             
             <div class="total-box">
+              <div class="total-row">
+                <span>TOPLAM ADET</span>
+                <strong>${quantityText}</strong>
+              </div>
               <p>GENEL TOPLAM</p>
               <h2>${currencySymbol}${order.totalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</h2>
             </div>

@@ -167,7 +167,15 @@ export class OrdersService {
       });
     });
 
-    return { orderCode: order.orderCode };
+    // WhatsApp mesajinda gosterilmek uzere sunucunun hesapladigi adetler de dondurulur.
+    const totalQuantity = itemsToCreate.reduce((sum, item) => sum + item.quantity, 0);
+    const totalSeries = itemsToCreate.reduce((sum, item) => sum + (parseSeriesCount(item.size) ?? 0), 0);
+    return {
+      orderCode: order.orderCode,
+      totalQuantity,
+      totalSeries,
+      items: itemsToCreate.map((item) => ({ productId: item.productId, size: item.size, color: item.color, quantity: item.quantity })),
+    };
   }
 
   async getOrderWithDetails(orderCode: string) {
