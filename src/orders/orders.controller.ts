@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Get, Param, Req, Res, Delete } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { LANGUAGE_NAMES_TR, OrderLanguage } from './order-messages';
 import type { Request, Response } from 'express'; 
 
 // Fis sayfasina basilan veriler HTML'e kacislanir.
@@ -56,6 +57,12 @@ export class OrdersController {
               <p><strong>${escapeHtml(order.district)} / ${escapeHtml(order.city)}</strong></p>
               ${order.orderNote ? `<p class="address-note">📝 Not: ${escapeHtml(order.orderNote)}</p>` : ''}
               <a class="map-btn" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener">📍 Haritada Aç</a>
+            </div>`
+        : order.language && order.language !== 'tr'
+        ? `
+            <div class="address-box">
+              <p class="address-title">📍 TESLİMAT ADRESİ</p>
+              <p>Müşteri siparişi ${escapeHtml(LANGUAGE_NAMES_TR[order.language as OrderLanguage] || order.language)} verdi; teslimat adresi WhatsApp üzerinden alınacak.</p>
             </div>`
         : `
             <div class="address-box address-missing">
@@ -173,6 +180,7 @@ export class OrdersController {
               <p><strong>Tarih:</strong> ${new Date(order.createdAt).toLocaleString('tr-TR')}</p>
               <p><strong>Müşteri No:</strong> ${escapeHtml(order.user?.phone)}</p>
               <p><strong>Toplam Adet:</strong> ${quantityText}</p>
+              ${order.language && order.language !== 'tr' ? `<p><strong>Sipariş Dili:</strong> ${escapeHtml(LANGUAGE_NAMES_TR[order.language as OrderLanguage] || order.language)}</p>` : ''}
               <p><strong>Durum:</strong> <span style="color: #d97706; font-weight: bold;">${escapeHtml(order.status)}</span></p>
             </div>
 

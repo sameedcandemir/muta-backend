@@ -76,6 +76,8 @@ model Order {
   district       String?
   addressLine    String?
   orderNote      String?
+  // Siparisin verildigi uygulama dili (tr / en / ar). Turkce disindaki dillerde adres WhatsApp'tan alinir.
+  language       String?
   createdAt  DateTime    @default(now()) 
   items      OrderItem[]
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OrderLanguage, orderMessage, resolveOrderLanguage } from './order-messages';
 
 type Tx = Prisma.TransactionClient;
 
@@ -51,9 +52,9 @@ export class OrdersService {
 
   // Stok takibi yapilan urunlerden adet duser. Yetersizse hic bir sey dusmeden hata verir
   // (transaction icinde cagrilir; kosullu guncelleme ayni anda gelen siparislerde eksi stogu engeller).
-  private async reserveStock(tx: Tx, items: { productId: number; quantity: number }[]) {
+  private async reserveStock(tx: Tx, items: { productId: number; quantity: number }[], lang: OrderLanguage = 'tr') {
     for (const [productId, quantity] of sumQuantitiesByProduct(items)) {
-      const product = await tx.product.findUnique({ where: { id: productId }, select: { name_tr: true, stockQuantity: true, piecesPerSeries: true } });
+      const product = await tx.product.findUnique({ where: { id: productId }, select: { name_tr: true, name_en: true, name_ar: true, stockQuantity: true, piecesPerSeries: true } });
       if (!product || product.stockQuantity === null) continue;
 
       const result = await tx.product.updateMany({
@@ -63,10 +64,11 @@ export class OrdersService {
       if (result.count === 0) {
         const left = product.stockQuantity;
         const perSeries = product.piecesPerSeries || 5;
+        const localizedName = (lang === 'en' ? product.name_en : lang === 'ar' ? product.name_ar : product.name_tr) || product.name_tr;
         throw new BadRequestException(
           left < perSeries
-            ? `"${product.name_tr}" ürününün stoğu tükendi. Lütfen sepetinizden çıkarın.`
-            : `"${product.name_tr}" için stokta ${left} adet (${Math.floor(left / perSeries)} seri) kaldı. Lütfen daha az seri seçin.`,
+            ? orderMessage('stock_sold_out', lang, { name: localizedName })
+            : orderMessage('stock_insufficient', lang, { name: localizedName, left, series: Math.floor(left / perSeries) }),
         );
       }
     }
@@ -99,12 +101,14 @@ export class OrdersService {
     );
 
     const userId = Number(data.userId);
+    const lang = resolveOrderLanguage(data.language);
 
     if (!Number.isInteger(userId) || userId <= 0 || productIds.length === 0 || productIds.some((id) => !Number.isInteger(id) || id <= 0)) {
-      throw new BadRequestException('Sipariş için geçerli ürünler bulunamadı.');
+      throw new BadRequestException(orderMessage('invalid_products', lang));
     }
 
-    const deliveryAddress = parseDeliveryAddress(data);
+    // Turkce siparislerde teslimat adresi zorunlu; diger dillerde adres WhatsApp uzerinden alinir.
+    const deliveryAddress = lang === 'tr' ? parseDeliveryAddress(data) : {};
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -117,14 +121,12 @@ export class OrdersService {
       products.some((product) => product.stockStatus !== 1);
 
     if (hasUnavailableProduct) {
-      throw new BadRequestException(
-        'Sepetinizde stokta olmayan veya silinmiş bir ürün var. Lütfen sepetinizi güncelleyin.',
-      );
+      throw new BadRequestException(orderMessage('unavailable_product', lang));
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      throw new BadRequestException('Kullanıcı bulunamadı. Lütfen tekrar giriş yapın.');
+      throw new BadRequestException(orderMessage('user_not_found', lang));
     }
 
     // Adet sunucuda hesaplanir: seri sayisi x urunun serideki adedi (unitPrice parca basi fiyattir).
@@ -141,7 +143,7 @@ export class OrdersService {
     });
 
     if (itemsToCreate.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
-      throw new BadRequestException('Sipariş kalemlerinde geçersiz adet veya fiyat var.');
+      throw new BadRequestException(orderMessage('invalid_items', lang));
     }
 
     // Toplam tutar istemciye guvenilmeden kalemlerden hesaplanir.
@@ -152,13 +154,14 @@ export class OrdersService {
 
     // Stok dusme ve siparis kaydi tek islemde: biri basarisiz olursa ikisi de geri alinir.
     const order = await this.prisma.$transaction(async (tx) => {
-      await this.reserveStock(tx, itemsToCreate);
+      await this.reserveStock(tx, itemsToCreate, lang);
       return tx.order.create({
         data: {
           orderCode,
           userId,
           totalPrice,
           currency: data.currency === 'USD' ? 'USD' : 'TRY',
+          language: lang,
           ...deliveryAddress,
           items: {
             create: itemsToCreate,
