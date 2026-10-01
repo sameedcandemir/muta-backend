@@ -78,7 +78,12 @@ model Order {
   orderNote      String?
   // Siparisin verildigi uygulama dili (tr / en / ar). Turkce disindaki dillerde adres WhatsApp'tan alinir.
   language       String?
-  createdAt  DateTime    @default(now()) 
+  // Yoneticinin uyguladigi ozel indirim: subtotalPrice indirim oncesi tutar (bos = indirim hic uygulanmadi),
+  // totalPrice her zaman musterinin odeyecegi son tutardir (muhasebe bunu kullanir).
+  subtotalPrice  Float?
+  discountAmount Float       @default(0)
+  discountNote   String?
+  createdAt  DateTime    @default(now())
   items      OrderItem[]
 }
 

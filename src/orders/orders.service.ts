@@ -262,6 +262,45 @@ export class OrdersService {
     });
   }
 
+  // Yonetici siparise ozel indirim uygular. Indirim her zaman ilk (indirimsiz) tutar uzerinden hesaplanir;
+  // tekrar uygulanirsa oncekinin yerine gecer, 0 verilirse indirim kaldirilir.
+  async applyDiscount(orderCode: string, body: { mode?: string; value?: number | string; note?: string }) {
+    const order = await this.prisma.order.findUnique({ where: { orderCode } });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı!');
+    if (order.status === 'IPTAL') throw new BadRequestException('İptal edilmiş siparişe indirim uygulanamaz.');
+
+    const mode = body?.mode;
+    const value = Number(String(body?.value ?? '').replace(',', '.'));
+    if (!['amount', 'percent', 'final'].includes(mode as string)) {
+      throw new BadRequestException('İndirim türü tutar, yüzde veya yeni toplam olmalıdır.');
+    }
+    if (!Number.isFinite(value) || value < 0) {
+      throw new BadRequestException('Lütfen geçerli bir sayı girin.');
+    }
+
+    const base = order.subtotalPrice ?? order.totalPrice;
+    const rawDiscount =
+      mode === 'amount' ? value
+      : mode === 'percent' ? (value > 100 ? NaN : (base * value) / 100)
+      : base - value;
+    if (!Number.isFinite(rawDiscount)) throw new BadRequestException('Yüzde 0 ile 100 arasında olmalıdır.');
+    if (rawDiscount < 0) throw new BadRequestException('Yeni toplam, sipariş tutarından yüksek olamaz.');
+    if (rawDiscount > base) throw new BadRequestException('İndirim, sipariş tutarından büyük olamaz.');
+
+    const discountAmount = Math.round(rawDiscount * 100) / 100;
+    const note = String(body?.note ?? '').trim().slice(0, 200);
+
+    return this.prisma.order.update({
+      where: { orderCode },
+      data: {
+        subtotalPrice: base,
+        discountAmount,
+        totalPrice: Math.round((base - discountAmount) * 100) / 100,
+        discountNote: discountAmount > 0 && note ? note : null,
+      },
+    });
+  }
+
   async deleteOrder(orderId: number) {
     try {
       const deletedOrder = await this.prisma.$transaction(async (tx) => {

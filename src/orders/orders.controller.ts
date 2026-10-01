@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Req, Res, Delete } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Get, Param, Req, Res, Delete } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { LANGUAGE_NAMES_TR, OrderLanguage } from './order-messages';
 import type { Request, Response } from 'express'; 
@@ -24,6 +24,12 @@ export class OrdersController {
   @Post(':orderCode/status')
   async updateOrderStatus(@Param('orderCode') orderCode: string, @Body('status') status: string) {
     return this.ordersService.updateOrderStatus(orderCode, status);
+  }
+
+  // Yonetici: siparise ozel indirim (mode: amount | percent | final)
+  @Patch(':orderCode/discount')
+  async applyDiscount(@Param('orderCode') orderCode: string, @Body() body: { mode?: string; value?: number | string; note?: string }) {
+    return this.ordersService.applyDiscount(orderCode, body);
   }
 
   @Delete(':orderId')
@@ -142,6 +148,8 @@ export class OrdersController {
             .total-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 14px; margin-bottom: 14px; text-align: left; }
             .total-row span { font-size: 11px; opacity: 0.7; letter-spacing: 2px; }
             .total-row strong { font-size: 18px; }
+            .discount-row strong { color: #4ade80; }
+            .discount-row em { font-style: normal; text-transform: none; letter-spacing: 0; }
             .total-box p { margin: 0 0 5px 0; font-size: 11px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; }
             
             /* 🚀 YENİ: Fotoğraf Büyütme (Modal) CSS Ayarları */
@@ -195,6 +203,15 @@ export class OrdersController {
                 <span>TOPLAM ADET</span>
                 <strong>${quantityText}</strong>
               </div>
+              ${order.discountAmount > 0 ? `
+              <div class="total-row">
+                <span>ARA TOPLAM</span>
+                <strong>${currencySymbol}${(order.subtotalPrice ?? order.totalPrice + order.discountAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div class="total-row discount-row">
+                <span>ÖZEL İNDİRİM${order.discountNote ? ` <em>(${escapeHtml(order.discountNote)})</em>` : ''}</span>
+                <strong>-${currencySymbol}${order.discountAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong>
+              </div>` : ''}
               <p>GENEL TOPLAM</p>
               <h2>${currencySymbol}${order.totalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</h2>
             </div>
